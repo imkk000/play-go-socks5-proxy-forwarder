@@ -6,7 +6,7 @@ A lightweight SOCKS5 proxy server with optional upstream proxy chaining support.
 
 - SOCKS5 proxy server listening on port `9001`
 - Optional upstream proxy chaining (chain multiple SOCKS5 proxies)
-- Logs each connection with timestamp, source, and destination
+- Optional request logging with timestamp, source, and destination
 - Graceful shutdown on `SIGINT` / `SIGTERM`
 
 ## Requirements
@@ -41,6 +41,13 @@ Pass a comma-separated list of upstream SOCKS5 proxies via `-chains`. Traffic is
 ./socks5-server -chains 10.0.0.1:1080,10.0.0.2:1080
 ```
 
+### With logging enabled
+
+```sh
+./socks5-server -log
+./socks5-server -chains 10.0.0.1:1080,10.0.0.2:1080 -log
+```
+
 ### Run with Docker
 
 ```sh
@@ -58,6 +65,7 @@ docker run -p 9001:9001 socks5-server -chains 10.0.0.1:1080,10.0.0.2:1080
 | Flag      | Default  | Description                                               |
 |-----------|----------|-----------------------------------------------------------|
 | `-chains` | _(none)_ | Comma-separated list of upstream SOCKS5 proxies to chain  |
+| `-log`    | `false`  | Enable request logging to stdout                          |
 
 ## Server address
 
@@ -65,7 +73,7 @@ The server listens on `0.0.0.0:9001` by default.
 
 ## Logging
 
-Each accepted connection is logged to stdout:
+Logging is disabled by default. Enable it with `-log` to print to stdout:
 
 ```
 [2026-04-20T10:00:00.000000000Z] start on :9001
