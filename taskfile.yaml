@@ -1,0 +1,5 @@
+---
+version: 3
+tasks:
+  build: docker build -t socks5-server .
+  save: docker save > socks5-server localhost/socks5-server:latest

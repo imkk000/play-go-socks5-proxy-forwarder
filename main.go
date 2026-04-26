@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/signal"
@@ -17,32 +19,62 @@ import (
 
 var addr = ":9001"
 
+func resolveDialer(chainAddr string, base proxy.Dialer) proxy.Dialer {
+	if chainAddr == "direct" {
+		return proxy.Direct
+	}
+	d, _ := proxy.SOCKS5("tcp", chainAddr, nil, base)
+	return d
+}
+
 func main() {
-	inputChains := flag.String("chains", "", "set proxy chains")
+	var multiChains [][]string
+	flag.Func("chains", "set proxy chains (support multiple random chains)", func(s string) error {
+		if len(s) == 0 {
+			return errors.New("chains is empty")
+		}
+		chains := strings.Split(s, ",")
+		multiChains = append(multiChains, chains)
+
+		return nil
+	})
 	enabledLog := flag.Bool("log", false, "enable log")
 	flag.Parse()
 
-	var defaultDial proxy.Dialer = &net.Dialer{}
-	if inputChains != nil && len(*inputChains) > 0 {
-		chains := strings.Split(*inputChains, ",")
-		previousDialer, _ := proxy.SOCKS5("tcp", chains[0], nil, proxy.Direct)
-		if *enabledLog {
-			fmt.Printf("[%s] chain 1: %s\n", time.Now().Format(time.RFC3339Nano), chains[0])
-		}
-		for i, next := range chains[1:] {
-			previousDialer, _ = proxy.SOCKS5("tcp", next, nil, previousDialer)
+	var dialers []proxy.ContextDialer
+	if len(multiChains) > 0 {
+		for id, chains := range multiChains {
+			previousDialer := resolveDialer(chains[0], proxy.Direct)
 			if *enabledLog {
-				fmt.Printf("[%s] chain %d: %s\n", time.Now().Format(time.RFC3339Nano), i+2, next)
+				fmt.Printf("[%s] chain %d - 1: %s\n", time.Now().Format(time.RFC3339Nano), id, chains[0])
 			}
+			for i, next := range chains[1:] {
+				previousDialer = resolveDialer(next, previousDialer)
+				if *enabledLog {
+					fmt.Printf("[%s] chain %d - %d: %s\n", time.Now().Format(time.RFC3339Nano), id, i+2, next)
+				}
+			}
+			dialer := previousDialer.(proxy.ContextDialer)
+			dialers = append(dialers, dialer)
 		}
-		defaultDial = previousDialer
 	}
-	dialer := defaultDial.(proxy.ContextDialer)
-	srv := socks5.NewServer(socks5.WithDialAndRequest(func(ctx context.Context, network, addr string, req *socks5.Request) (net.Conn, error) {
-		if *enabledLog {
-			fmt.Printf("[%s] from: %s -> %s (%b)\n", time.Now().Format(time.RFC3339Nano), req.LocalAddr.String(), addr, req.Request.Command)
+	if len(dialers) == 0 {
+		dialers = append(dialers, &net.Dialer{})
+	}
+	l := len(dialers)
+	getDialer := func() (proxy.ContextDialer, int) {
+		var id int
+		if l > 0 {
+			id = rand.IntN(l)
 		}
+		return dialers[id], id
+	}
 
+	srv := socks5.NewServer(socks5.WithDialAndRequest(func(ctx context.Context, network, addr string, req *socks5.Request) (net.Conn, error) {
+		dialer, id := getDialer()
+		if *enabledLog {
+			fmt.Printf("[%s] id: %d from: %s -> %s (%d)\n", time.Now().Format(time.RFC3339Nano), id, req.LocalAddr.String(), addr, req.Request.Command)
+		}
 		return dialer.DialContext(ctx, network, addr)
 	}))
 
